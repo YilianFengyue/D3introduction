@@ -11,7 +11,10 @@ export function aggregateStudentFeatures(
   console.time('⏱️ 特征聚合');
 
   // 按学生分组
-  const grouped = d3.group(records, d => d.student_ID);
+  /* ===== [PATCH START] 强类型化 d3.group + 去除未用变量，避免 TS18046/TS6133 ===== */
+
+  // 按学生分组 —— 显式泛型，避免 unknown
+  const grouped = d3.group<SubmitRecord, string>(records, d => d.student_ID);
 
   const features: StudentFeatures[] = [];
 
@@ -19,48 +22,53 @@ export function aggregateStudentFeatures(
     const studentInfo = studentMap.get(student_ID);
     const classLabel = logs[0]?.class || 'Unknown';
 
-    // 按题目分组（用于计算redo_rate）
-    const byTitle = d3.group(logs, d => d.title_ID);
+    // 按题目分组（用于计算 redo_rate）—— 显式泛型，避免 unknown
+    const byTitle = d3.group<SubmitRecord, string>(logs, d => d.title_ID);
     const totalTitles = byTitle.size;
-    const redoTitles = Array.from(byTitle.values()).filter(l => l.length > 1).length;
+
+    // l 的类型显式为 SubmitRecord[]，避免 unknown
+    const redoTitles = Array.from(byTitle.values()).filter((l: SubmitRecord[]) => l.length > 1).length;
 
     // 计算各个特征
-    const scores = logs.map(d => d.pct_score!);
-    const times = logs.map(d => d.timeconsume);
-    const deltas = logs.map(d => d.delta_t!).filter(d => d > 0);
-    const hours = logs.map(d => d.hour!);
+    // const scores = logs.map(d => d.pct_score!);   // ❌ 未使用，移除避免 TS6133
+    const times: number[] = logs.map(d => d.timeconsume ?? 0);
+    const deltas: number[] = logs.map(d => d.delta_t ?? 0).filter(d => d > 0);
+    const hours: number[] = logs.map(d => d.hour ?? 0);
 
-    // 1. acc_last: 每道题最后一次的平均得分
-    const lastScores = Array.from(byTitle.values()).map(titleLogs => {
-      const sorted = titleLogs.sort((a, b) => a.time - b.time);
-      return sorted[sorted.length - 1].pct_score!;
+    // 1) acc_last：每道题最后一次的平均得分
+    const lastScores = Array.from(byTitle.values()).map((titleLogs: SubmitRecord[]) => {
+      // 用拷贝 + 排序，避免原数组被就地排序
+      const sorted = [...titleLogs].sort((a, b) => a.time - b.time);
+      return sorted[sorted.length - 1].pct_score || 0;
     });
     const acc_last = d3.mean(lastScores) || 0;
 
-    // 2. gain: 每道题最后得分 - 首次得分
-    const gains = Array.from(byTitle.values()).map(titleLogs => {
-      const sorted = titleLogs.sort((a, b) => a.time - b.time);
-      return sorted[sorted.length - 1].pct_score! - sorted[0].pct_score!;
+    // 2) gain：最后得分 - 首次得分
+    const gains = Array.from(byTitle.values()).map((titleLogs: SubmitRecord[]) => {
+      const sorted = [...titleLogs].sort((a, b) => a.time - b.time);
+      const last = sorted[sorted.length - 1].pct_score || 0;
+      const first = sorted[0].pct_score || 0;
+      return last - first;
     });
     const gain = d3.mean(gains) || 0;
 
-    // 3. redo_rate: 多次尝试的题占比
+    // 3) redo_rate：多次尝试的题占比
     const redo_rate = totalTitles > 0 ? redoTitles / totalTitles : 0;
 
-    // 4. avg_time: 平均耗时（归一化到0-1）
+    // 4) avg_time：平均耗时（后面再归一化）
     const avg_time = d3.mean(times) || 0;
 
-    // 5. spacing_med: 时间间隔中位数
-    const spacing_med = deltas.length > 0 ? d3.median(deltas)! : 0;
+    // 5) spacing_med：时间间隔中位数
+    const spacing_med = deltas.length > 0 ? (d3.median(deltas) as number) : 0;
 
-    // 6. night_ratio: 夜间学习占比（22:00-07:00）
+    // 6) night_ratio：夜间学习占比
     const nightCount = hours.filter(h => h >= 22 || h < 7).length;
     const night_ratio = logs.length > 0 ? nightCount / logs.length : 0;
 
-    // 7. explore_bonus: AC后继续探索的次数
+    // 7) explore_bonus：AC 后继续探索的次数（对每题）
     let exploreCount = 0;
-    for (const titleLogs of byTitle.values()) {
-      const sorted = titleLogs.sort((a, b) => a.time - b.time);
+    for (const titleLogs of byTitle.values() as Iterable<SubmitRecord[]>) {
+      const sorted = [...titleLogs].sort((a, b) => a.time - b.time);
       const firstAC = sorted.findIndex(d => d.correct === 1);
       if (firstAC >= 0 && firstAC < sorted.length - 1) {
         exploreCount += sorted.length - firstAC - 1;
@@ -68,12 +76,11 @@ export function aggregateStudentFeatures(
     }
     const explore_bonus = logs.length > 0 ? exploreCount / logs.length : 0;
 
-    // 8. enthusiasm_bonus: 平均提交时间（相对于题目发布）- 简化版
-    // 这里用"首次尝试在第几周"作为代理
-    const firstWeeks = Array.from(byTitle.values()).map(titleLogs => {
-      return Math.min(...titleLogs.map(d => d.week!));
-    });
-    const avgFirstWeek = d3.mean(firstWeeks) || 0;
+    // 8) enthusiasm_bonus：首次尝试越早越高（用周序代理）
+    const firstWeeks = Array.from(byTitle.values()).map((titleLogs: SubmitRecord[]) =>
+      Math.min(...titleLogs.map(d => d.week ?? Number.POSITIVE_INFINITY))
+    );
+    const avgFirstWeek = d3.mean(firstWeeks.filter(Number.isFinite) as number[]) || 0;
     const enthusiasm_bonus = Math.max(0, 1 - avgFirstWeek / 20); // 越早越高
 
     features.push({
@@ -82,8 +89,8 @@ export function aggregateStudentFeatures(
       acc_last,
       gain,
       redo_rate,
-      avg_time: normalizeValue(avg_time, 0, 10), // 假设最大10秒
-      spacing_med: normalizeValue(spacing_med, 0, 7 * 24 * 3600), // 最大1周
+      avg_time: normalizeValue(avg_time, 0, 10),                // 假设最大 10 秒
+      spacing_med: normalizeValue(spacing_med, 0, 7 * 24 * 3600),// 最大 1 周
       night_ratio,
       explore_bonus,
       enthusiasm_bonus,

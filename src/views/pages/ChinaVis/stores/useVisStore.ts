@@ -36,7 +36,10 @@ export const useVisStore = defineStore('chinavis', () => {
 
   /** 筛选的专业 */
   const selectedMajors = ref<string[]>([]);
-
+  
+  /** 选中的知识点 */
+  const selectedKnowledge = ref<string | null>(null);
+  
   // ============================================
   // 计算属性
   // ============================================
@@ -94,7 +97,12 @@ export const useVisStore = defineStore('chinavis', () => {
       enabledFeatures.value.push(featureKey);
     }
   }
-
+  /* ===== [PATCH START] 知识点选择方法 ===== */
+  /** 设置选中的知识点 */
+  function setSelectedKnowledge(knowledge: string | null) {
+    selectedKnowledge.value = knowledge;
+  }
+  /* ===== [PATCH END] ===== */
   return {
     // 状态
     selectedStudents,
@@ -107,7 +115,7 @@ export const useVisStore = defineStore('chinavis', () => {
     // 计算属性
     hasSelection,
     selectedStudentsList,
-    
+    selectedKnowledge,
     // 方法
     setSelectedStudents,
     addStudent,
@@ -116,5 +124,6 @@ export const useVisStore = defineStore('chinavis', () => {
     toggleCluster,
     setClusterCount,
     toggleFeature,
+    setSelectedKnowledge,
   };
 });

@@ -7,98 +7,102 @@
       
       <v-spacer />
       
-      <!-- 操作菜单 -->
-      <v-menu>
-        <template v-slot:activator="{ props }">
-          <v-btn 
-            icon 
-            size="small" 
-            variant="text"
-            v-bind="props"
-          >
-            <v-icon>mdi-dots-vertical</v-icon>
-          </v-btn>
-        </template>
-        
-        <v-list density="compact" min-width="200">
-          <!-- 聚类数量 -->
-          <v-list-subheader>聚类设置</v-list-subheader>
-          <v-list-item>
-            <v-select
-              v-model="store.clusterCount"
-              :items="[2, 3, 4, 5]"
-              label="聚类数量"
-              density="compact"
-              variant="outlined"
-              hide-details
-            />
-          </v-list-item>
-          
-          <v-divider class="my-1" />
-          
-          <!-- 操作按钮 -->
+     <!-- 操作菜单 -->
+    <v-menu
+      :close-on-content-click="false"    
+      location="bottom end"
+      transition="scale-transition"
+    >
+      <template #activator="{ props }">
+        <v-btn icon size="small" variant="text" v-bind="props">
+          <v-icon>mdi-dots-vertical</v-icon>
+        </v-btn>
+      </template>
+
+      <!-- 用 Card 包裹；表单控件放在 card-text，而不是 v-list-item -->
+      <v-card min-width="260">
+        <v-card-text>
+          <div class="text-caption mb-2">聚类设置</div>
+          <v-select
+            v-model="store.clusterCount"
+            :items="[2, 3, 4, 5]"
+            label="聚类数量"
+            density="compact"
+            variant="outlined"
+            hide-details
+            @click.stop                    
+            @mousedown.stop                 
+          />
+        </v-card-text>
+
+        <v-divider class="my-1" />
+
+        <!-- 下面才是菜单里的动作条目 -->
+        <v-list density="compact">
           <v-list-item @click="resetView" prepend-icon="mdi-refresh">
             <v-list-item-title>重置视图</v-list-item-title>
           </v-list-item>
-          
+
           <v-list-item @click="handleExport" prepend-icon="mdi-download">
             <v-list-item-title>导出选中数据</v-list-item-title>
           </v-list-item>
-          
+
           <v-list-item @click="reloadData" prepend-icon="mdi-reload">
             <v-list-item-title>重新加载数据</v-list-item-title>
           </v-list-item>
         </v-list>
-      </v-menu>
+      </v-card>
+    </v-menu>
     </v-card-title>
 
     <v-divider />
 
     <!-- 加载状态 -->
-    <v-card-text v-if="scatterData.loading.value" class="text-center pa-8">
-      <v-progress-circular indeterminate color="primary" size="64" />
-      <div class="mt-4 text-body-1">加载数据中...</div>
-    </v-card-text>
+<v-card-text v-if="scatterData.loading.value" class="text-center pa-8">
+  <v-progress-circular indeterminate color="primary" size="64" />
+  <div class="mt-4 text-body-1">加载数据中...</div>
+</v-card-text>
 
-    <!-- 错误状态 -->
-    <v-card-text v-else-if="scatterData.error.value" class="text-center pa-8">
-      <v-icon color="error" size="64">mdi-alert-circle</v-icon>
-      <div class="mt-4 text-error">{{ scatterData.error.value.message }}</div>
-    </v-card-text>
+<!-- 错误状态 -->              <!-- ❌ 去掉这类注释（或移到内部） -->
+<v-card-text v-else-if="scatterData.error.value" class="text-center pa-8">
+  <v-icon color="error" size="64">mdi-alert-circle</v-icon>
+  <div class="mt-4 text-error">{{ scatterData.error.value.message }}</div>
+</v-card-text>
 
-    <!-- 散点图画布 -->
-    <v-card-text v-else class="pa-2" style="height: calc(100% - 120px); overflow: hidden;">
-      <div ref="containerRef" class="scatter-container">
-        <svg ref="svgRef" width="100%" height="100%" />
-        
-        <!-- Tooltip -->
-        <div
-          ref="tooltipRef"
-          class="scatter-tooltip"
-          :style="tooltipStyle"
-          v-show="tooltip.visible"
-        >
-          <div class="tooltip-title">{{ tooltip.data?.student_ID }}</div>
-          <v-divider class="my-1" />
-          <div class="tooltip-row">
-            <span>班级:</span>
-            <strong>{{ tooltip.data?.class }}</strong>
-          </div>
-          <div class="tooltip-row">
-            <span>掌握度:</span>
-            <strong>{{ tooltip.data?.acc_last.toFixed(2) }}</strong>
-          </div>
-          <div class="tooltip-row">
-            <span>重做率:</span>
-            <strong>{{ tooltip.data?.redo_rate.toFixed(2) }}</strong>
-          </div>
-          <div class="tooltip-row">
-            <span>提交次数:</span>
-            <strong>{{ tooltip.data?.meta.attempts }}</strong>
-          </div>
-        </div>
+<!-- 散点图画布 -->            <!-- ❌ 去掉这类注释（或移到内部） -->
+<v-card-text v-else class="pa-2" style="height: calc(100% - 120px); overflow: hidden;">
+  <div ref="containerRef" class="scatter-container">
+    <!-- ✅ ② 配合下面把 svg 改成成对闭合 -->
+    <svg ref="svgRef" width="100%" height="100%"></svg>
+
+    <!-- Tooltip（把注释放在内部不会破链） -->
+    <div
+      ref="tooltipRef"
+      class="scatter-tooltip"
+      :style="tooltipStyle"
+      v-show="tooltip.visible"
+    >
+      <div class="tooltip-title">{{ tooltip.data?.student_ID }}</div>
+      <v-divider class="my-1" />
+      <div class="tooltip-row">
+        <span>班级:</span>
+        <strong>{{ tooltip.data?.class }}</strong>
       </div>
-    </v-card-text>
+      <div class="tooltip-row">
+        <span>掌握度:</span>
+        <strong>{{ tooltip.data?.acc_last.toFixed(2) }}</strong>
+      </div>
+      <div class="tooltip-row">
+        <span>重做率:</span>
+        <strong>{{ tooltip.data?.redo_rate.toFixed(2) }}</strong>
+      </div>
+      <div class="tooltip-row">
+        <span>提交次数:</span>
+        <strong>{{ tooltip.data?.meta.attempts }}</strong>
+      </div>
+    </div>
+  </div>
+</v-card-text>
 
     <!-- 图例 - 紧凑版 -->
     <v-card-actions class="px-3 py-2" style="border-top: 1px solid #e0e0e0;">
@@ -118,12 +122,15 @@
         >
           {{ CLUSTER_NAMES[k - 1].split('(')[0].trim() }}
           <v-badge
-            :content="scatterData.clusterStats.value.get(k - 1) || 0"
-            inline
-            color="white"
-            text-color="black"
-            class="ml-1"
-          />
+          :content="scatterData.clusterStats.value.get(k - 1) || 0"
+          color="white"
+          text-color="black"
+          inline
+          class="ml-1"
+        >
+          <!-- 作为徽标锚点的内联元素（可以是空 span） -->
+          <span></span>
+        </v-badge>
         </v-chip>
       </v-chip-group>
     </v-card-actions>
@@ -138,6 +145,8 @@ import { useVisStore } from '../stores/useVisStore';
 import { CLUSTER_COLORS, CLUSTER_NAMES, VIS_CONFIG } from '../lib/constants';
 import type { StudentPoint } from '../types';
 
+import { buildQuadtree, installHoverTooltip, installClickSelect } from '../lib/interaction';
+
 // ============================================
 // Setup
 // ============================================
@@ -151,6 +160,7 @@ const tooltipRef = ref<HTMLDivElement | null>(null);
 
 const width = ref(600);
 const height = ref(350);
+
 
 // ============================================
 // Tooltip状态
@@ -332,7 +342,46 @@ function renderScatter() {
     .on('end', handleBrush);
 
   svg.append('g').attr('class', 'brush').call(brush);
+      /* ===== [PATCH START] overlay + quadtree + hover & click ===== */
 
+    // 拿到 brush 的 overlay（这货盖在点上，会拦截事件）
+    const gBrush = svg.select<SVGGElement>('g.brush');                 // ✅ 不要把 append(...) 赋给 const，直接 select 更稳
+    const overlay = gBrush.select<SVGRectElement>('.overlay')
+      .style('cursor', 'crosshair');                                   // 光标样式
+
+    // 基于当前“可见的 points”构建 quadtree（用像素坐标加速最近邻查找）
+    const tree = d3.quadtree<StudentPoint>()
+      .x(d => xScale(d.x))
+      .y(d => yScale(d.y))
+      .addAll(points);
+
+    // Hover：在 overlay 上做最近邻拾取，更新响应式 tooltip
+    overlay
+      .on('mousemove.overlay', (event: MouseEvent) => {
+        const [mx, my] = d3.pointer(event);                            // 鼠标像素坐标（相对 SVG）
+        const found = tree.find(mx, my, 24);                           // 24px 搜索半径
+        if (!found) { tooltip.value.visible = false; return; }
+        tooltip.value.visible = true;
+        tooltip.value.x = event.pageX + 10;                            // 你现有 tooltip 是 fixed，需要 pageX/pageY
+        tooltip.value.y = event.pageY + 10;
+        tooltip.value.data = found;
+      })
+      .on('mouseleave.overlay', () => { tooltip.value.visible = false; });
+
+    // Click：在 overlay 上拾取最近点，单选/多选（Ctrl/⌘ 多选）
+    overlay.on('click.overlay', (event: MouseEvent) => {
+      const [mx, my] = d3.pointer(event);
+      const found = tree.find(mx, my, 16);
+      if (!found) return;
+
+      const multi = event.metaKey || event.ctrlKey;
+      if (!multi) store.clearSelection();
+      if (store.selectedStudents.has(found.student_ID)) {
+        store.removeStudent(found.student_ID);
+      } else {
+        store.addStudent(found.student_ID);
+      }
+    });
   // 绘制点
   drawPoints(g, points, xScale, yScale);
 
@@ -379,34 +428,34 @@ function drawPoints(
     .attr('stroke', d => d.selected ? '#fff' : 'none')
     .attr('stroke-width', d => d.selected ? 2 : 0)
     .style('cursor', 'pointer')
-    .on('mouseenter', (event, d) => {
-      tooltip.value = {
-        visible: true,
-        x: event.pageX + 10,
-        y: event.pageY + 10,
-        data: d,
-      };
+    // .on('mouseenter', (event, d) => {
+    //   tooltip.value = {
+    //     visible: true,
+    //     x: event.pageX + 10,
+    //     y: event.pageY + 10,
+    //     data: d,
+    //   };
       
-      d3.select(event.target)
-        .attr('r', VIS_CONFIG.pointRadiusHover);
-    })
-    .on('mousemove', (event) => {
-      tooltip.value.x = event.pageX + 10;
-      tooltip.value.y = event.pageY + 10;
-    })
-    .on('mouseleave', (event, d) => {
-      tooltip.value.visible = false;
+    //   d3.select(event.target)
+    //     .attr('r', VIS_CONFIG.pointRadiusHover);
+    // })
+    // .on('mousemove', (event) => {
+    //   tooltip.value.x = event.pageX + 10;
+    //   tooltip.value.y = event.pageY + 10;
+    // })
+    // .on('mouseleave', (event, d) => {
+    //   tooltip.value.visible = false;
       
-      d3.select(event.target)
-        .attr('r', d.selected ? VIS_CONFIG.pointRadiusSelected : VIS_CONFIG.pointRadius);
-    })
-    .on('click', (event, d) => {
-      if (store.selectedStudents.has(d.student_ID)) {
-        store.removeStudent(d.student_ID);
-      } else {
-        store.addStudent(d.student_ID);
-      }
-    });
+    //   d3.select(event.target)
+    //     .attr('r', d.selected ? VIS_CONFIG.pointRadiusSelected : VIS_CONFIG.pointRadius);
+    // })
+    // .on('click', (event, d) => {
+    //   if (store.selectedStudents.has(d.student_ID)) {
+    //     store.removeStudent(d.student_ID);
+    //   } else {
+    //     store.addStudent(d.student_ID);
+    //   }
+    // });
 }
 
 // ============================================

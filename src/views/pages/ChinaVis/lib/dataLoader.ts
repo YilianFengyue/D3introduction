@@ -6,41 +6,65 @@ import { DATA_PATHS, CLASS_NUMS } from './constants';
  * 并行加载所有CSV数据
  * 约30万条日志 + 维表，耗时约1-2秒
  */
-export async function loadAllData() {
-  console.time('⏱️ 数据加载');
+// ===== [PATCH START] singleton loadAllData =====
+// ===== [PATCH START] 明确数据包类型，修正 _inflight 类型收窄问题 =====
+type DataBundle = {
+  students: StudentInfo[];
+  studentMap: Map<string, StudentInfo>;
+  titles: TitleInfo[];
+  titleMap: Map<string, TitleInfo>;
+  records: SubmitRecord[];
+};
 
-  try {
-    // 并行加载所有数据
-    const [studentsRaw, titlesRaw, ...classRecordsRaw] = await Promise.all([
-      d3.csv(DATA_PATHS.students),
-      d3.csv(DATA_PATHS.titles),
-      ...CLASS_NUMS.map(n => d3.csv(DATA_PATHS.getClassRecords(n))),
-    ]);
+let _cache: DataBundle | null = null;
+let _inflight: Promise<DataBundle> | null = null;
+// ===== [PATCH END] =====
 
-    console.timeEnd('⏱️ 数据加载');
-    console.time('⏱️ 数据解析');
+// ===== [PATCH START] loadAllData 显式返回 DataBundle =====
+export async function loadAllData(force = false): Promise<DataBundle> {
+  if (_cache && !force) return _cache; // TS 已能正确收窄；若仍告警可写: return _cache as DataBundle;
+  if (_inflight) return _inflight;
 
-    // 解析学生表
-    const students = parseStudents(studentsRaw);
-    const studentMap = new Map(students.map(s => [s.student_ID, s]));
+  const t0 = performance.now();
 
-    // 解析题目表（构建查找表）
-    const titles = parseTitles(titlesRaw);
-    const titleMap = new Map(titles.map(t => [t.title_ID, t]));
+  _inflight = (async (): Promise<DataBundle> => {
+    try {
+      // 保留你当前的并行加载与解析逻辑 ↓↓↓
+      const [studentsRaw, titlesRaw, ...classRecordsRaw] = await Promise.all([
+        d3.csv(DATA_PATHS.students),
+        d3.csv(DATA_PATHS.titles),
+        ...CLASS_NUMS.map((n) => d3.csv(DATA_PATHS.getClassRecords(n))),
+      ]);
 
-    // 合并所有班级的日志并解析
-    const allRecordsRaw = classRecordsRaw.flat();
-    const records = parseRecords(allRecordsRaw, titleMap);
+      const students = parseStudents(studentsRaw);
+      const studentMap = new Map(students.map((s) => [s.student_ID, s]));
 
-    console.timeEnd('⏱️ 数据解析');
-    console.log(`✅ 加载完成: ${students.length}个学生, ${titles.length}道题, ${records.length}条日志`);
+      const titles = parseTitles(titlesRaw);
+      const titleMap = new Map(titles.map((t) => [t.title_ID, t]));
 
-    return { students, studentMap, titles, titleMap, records };
-  } catch (error) {
-    console.error('❌ 数据加载失败:', error);
-    throw error;
-  }
+      const allRecordsRaw = classRecordsRaw.flat();
+      const records = parseRecords(allRecordsRaw, titleMap);
+
+      _cache = { students, studentMap, titles, titleMap, records };
+
+      console.log(`⏱️ 数据加载+解析: ${(performance.now() - t0).toFixed(1)} ms`);
+      console.log(
+        `✅ 加载完成: ${students.length}个学生, ${titles.length}道题, ${records.length}条日志`
+      );
+
+      return _cache; // 这里的 _cache 一定是 DataBundle
+    } catch (error) {
+      console.error("❌ 数据加载失败:", error);
+      throw error;
+    } finally {
+      _inflight = null;
+    }
+  })();
+
+  return _inflight;
 }
+// ===== [PATCH END] =====
+
 
 /**
  * 解析学生表

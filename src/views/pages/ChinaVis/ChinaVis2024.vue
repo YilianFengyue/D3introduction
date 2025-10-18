@@ -2,6 +2,7 @@
 
 import PortraitCard from "./components/PortraitCard.vue";
 import ScatterCard from "./components/ScatterCard.vue";
+import QuestionCard from "./components/QuestionCard.vue";
 
 </script>
 <template>
@@ -41,8 +42,7 @@ import ScatterCard from "./components/ScatterCard.vue";
         <v-col cols="5" xl="4">
         <!-- Sales Card -->
         <v-card class="card-shadow" height="600">
-          <!-- <sales-card></sales-card> -->
-          <v-card-title>QuestionView</v-card-title>
+          <QuestionCard />
         </v-card>
       </v-col>
       <v-col cols="7" xl="6">
