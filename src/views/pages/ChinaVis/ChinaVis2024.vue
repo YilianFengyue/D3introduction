@@ -3,7 +3,7 @@
 import PortraitCard from "./components/PortraitCard.vue";
 import ScatterCard from "./components/ScatterCard.vue";
 import QuestionCard from "./components/QuestionCard.vue";
-
+import WeekCard from "./components/WeekCard.vue";  // ← 新增
 </script>
 <template>
   <div class="pa-5">
@@ -48,7 +48,7 @@ import QuestionCard from "./components/QuestionCard.vue";
       <v-col cols="7" xl="6">
          <v-card class="card-shadow" height="600">
           <!-- <sales-card></sales-card> -->
-          <v-card-title>WeekView</v-card-title>
+           <WeekCard />
         </v-card>
       </v-col>
     </v-row>
