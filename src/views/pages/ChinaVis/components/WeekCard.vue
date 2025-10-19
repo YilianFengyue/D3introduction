@@ -39,14 +39,14 @@
     <v-divider />
 
     <!-- 加载状态 -->
-    <v-card-text v-if="weekData.loading.value" class="text-center pa-8">
+    <v-card-text v-if="weekData.loading.value || scatterData.loading.value" class="text-center pa-8">
       <v-progress-circular indeterminate color="primary" size="48" />
     </v-card-text>
 
     <!-- 空状态 -->
-    <v-card-text v-else-if="allStudentData.length === 0" class="text-center pa-8">
+    <v-card-text v-else-if="pagedStudentData.length === 0" class="text-center pa-8">
       <v-icon size="64" color="grey-lighten-1">mdi-information-outline</v-icon>
-      <div class="mt-2 text-grey">该时间段内无答题记录</div>
+      <div class="mt-2 text-grey">暂无答题记录</div>
     </v-card-text>
 
     <!-- 周日志画布 -->
@@ -54,33 +54,35 @@
       <div ref="containerRef" class="week-container">
         <svg ref="svgRef" :width="svgWidth" :height="svgHeight" />
         
-        <!-- Tooltip -->
-        <div
-          ref="tooltipRef"
+        <!-- Tooltip - 改用相对定位 -->
+        <v-card
+          v-show="tooltip.visible"
           class="week-tooltip"
           :style="tooltipStyle"
-          v-show="tooltip.visible"
+          elevation="8"
         >
-          <div class="tooltip-header">
-            <strong>{{ tooltip.studentId }}</strong>
-            <span class="text-caption ml-2">Week {{ tooltip.week }}</span>
-          </div>
-          <v-divider class="my-1" />
-          <div class="tooltip-content">
-            <div v-for="[k, v] in tooltip.knowledge" :key="k" class="tooltip-row">
-              <span>{{ k }}:</span>
-              <strong>{{ (v * 100).toFixed(0) }}%</strong>
+          <v-card-title class="text-subtitle-2 pa-2">
+            <v-icon size="16" class="mr-1">mdi-account</v-icon>
+            {{ tooltip.studentId }}
+            <v-spacer />
+            <v-chip size="x-small" color="primary">Week {{ tooltip.week }}</v-chip>
+          </v-card-title>
+          <v-divider />
+          <v-card-text class="pa-2 text-caption">
+            <div v-for="[k, v] in tooltip.knowledge" :key="k" class="d-flex justify-space-between mb-1">
+              <span class="text-grey-darken-1">{{ k }}:</span>
+              <strong :style="{ color: getScoreColor(v) }">{{ (v * 100).toFixed(0) }}%</strong>
             </div>
-          </div>
-          <v-divider class="my-1" />
-          <div class="tooltip-row">
-            <span>平均得分:</span>
-            <strong>{{ (tooltip.avgScore * 100).toFixed(0) }}%</strong>
-          </div>
-          <div class="tooltip-row">
-            <span>提交 {{ tooltip.submits }} 次</span>
-          </div>
-        </div>
+            <v-divider class="my-1" />
+            <div class="d-flex justify-space-between">
+              <span class="text-grey-darken-1">平均得分:</span>
+              <strong class="text-success">{{ (tooltip.avgScore * 100).toFixed(0) }}%</strong>
+            </div>
+            <div class="text-grey text-caption mt-1">
+              提交 {{ tooltip.submits }} 次
+            </div>
+          </v-card-text>
+        </v-card>
       </div>
     </v-card-text>
   </v-card>
@@ -94,36 +96,29 @@ import { useVisStore } from '../stores/useVisStore';
 import { useScatterData } from '../composables/useScatterData';
 import type { WeekSnapshot } from '../lib/aggregateWeek';
 
-// ============================================
-// Setup
-// ============================================
-
 const weekData = useWeekData();
 const store = useVisStore();
 const scatterData = useScatterData();
 
 const svgRef = ref<SVGSVGElement | null>(null);
 const containerRef = ref<HTMLDivElement | null>(null);
-const tooltipRef = ref<HTMLDivElement | null>(null);
 
-// 分页状态
 const currentPage = ref(1);
-const pageSize = 10; // 每页显示10个学生
+const pageSize = 5; // 减少每页数量，提升性能
 
 // 布局参数
 const rowHeight = 100;
 const weekWidth = 90;
 const ringRadius = 36;
 const innerRadius = 24;
-const leftMargin = 100;
-
-// D3 配色方案
-const knowledgeColorScale = d3.scaleOrdinal(d3.schemeCategory10);
-const scoreColorScale = d3.scaleSequential(d3.interpolateYlGn).domain([0, 1]);
+const leftMargin = 70; // 缩小左边距，避免文字冲突
 
 // ============================================
-// 学生数据聚合
+// D3 配色方案 - 使用推荐的 Blues
 // ============================================
+const knowledgeColors = d3.schemeBlues[9];
+const knowledgeColorScale = d3.scaleOrdinal(knowledgeColors);
+const scoreColorScale = d3.scaleSequential(d3.interpolateBlues).domain([0, 1]);
 
 interface StudentWeekRow {
   studentId: string;
@@ -131,47 +126,61 @@ interface StudentWeekRow {
   maxWeek: number;
 }
 
-const allStudentData = computed<StudentWeekRow[]>(() => {
+// ============================================
+// 学生数据聚合 - 修复：分离全体平均和个体逻辑
+// ============================================
+const isAllMode = computed(() => store.selectedStudents.size === 0);
+
+// 总数据（用于分页计算）
+const totalStudentCount = computed(() => {
+  if (isAllMode.value) return 1; // 全体平均只有1行
+  return store.selectedStudents.size;
+});
+
+const totalPages = computed(() => 
+  Math.ceil(totalStudentCount.value / pageSize)
+);
+
+// 只渲染当前页的数据
+const pagedStudentData = computed<StudentWeekRow[]>(() => {
   if (!scatterData.rawData?.value) return [];
 
-  const { records, titleMap } = scatterData.rawData.value;
-  const selectedIds = store.selectedStudents;
-
-  // 未选中：显示全体平均
-  if (selectedIds.size === 0) {
+  // 情况1：全体平均（不分页，直接用 weekData）
+  if (isAllMode.value) {
+    const snaps = weekData.snapshots.value.filter(s => s.hasActivity);
+    if (snaps.length === 0) return [];
     return [{
       studentId: '全体平均',
-      snapshots: weekData.snapshots.value,
-      maxWeek: Math.max(...weekData.snapshots.value.map(s => s.week), 0),
+      snapshots: snaps,
+      maxWeek: Math.max(...snaps.map(s => s.week), 0),
     }];
   }
 
-  // 已选中：为每个学生聚合
-  return Array.from(selectedIds)
+  // 情况2：选中学生（分页加载）
+  const { records, titleMap } = scatterData.rawData.value;
+  const allIds = Array.from(store.selectedStudents);
+  
+  // 只取当前页的ID
+  const start = (currentPage.value - 1) * pageSize;
+  const end = start + pageSize;
+  const pageIds = allIds.slice(start, end);
+
+  // 只聚合当前页的5个学生
+  return pageIds
     .map(studentId => {
-      const snapshots = aggregateStudentWeeks(records, titleMap, studentId);
+      const snapshots = aggregateStudentWeeks(records, titleMap, studentId)
+        .filter(s => s.hasActivity && s.totalSubmits > 0);
+      if (snapshots.length === 0) return null;
       return {
         studentId,
         snapshots,
         maxWeek: Math.max(...snapshots.map(s => s.week), 0),
       };
     })
-    .filter(row => row.snapshots.length > 0)
-    .sort((a, b) => b.maxWeek - a.maxWeek); // 按活跃度排序
+    .filter((row): row is StudentWeekRow => row !== null)
+    .sort((a, b) => b.maxWeek - a.maxWeek);
 });
 
-// 分页数据
-const pagedStudentData = computed(() => {
-  const start = (currentPage.value - 1) * pageSize;
-  const end = start + pageSize;
-  return allStudentData.value.slice(start, end);
-});
-
-const totalPages = computed(() => 
-  Math.ceil(allStudentData.value.length / pageSize)
-);
-
-// 单个学生的周数据聚合
 function aggregateStudentWeeks(records: any[], titleMap: any, studentId: string) {
   const studentRecords = records.filter(r => r.student_ID === studentId);
   const byWeek = d3.group(studentRecords, d => d.week || 0);
@@ -213,7 +222,6 @@ function aggregateStudentWeeks(records: any[], titleMap: any, studentId: string)
   return snapshots.sort((a, b) => a.week - b.week);
 }
 
-// SVG 尺寸
 const svgWidth = computed(() => {
   const maxWeeks = Math.max(
     ...pagedStudentData.value.map(r => r.maxWeek),
@@ -227,9 +235,8 @@ const svgHeight = computed(() => {
 });
 
 // ============================================
-// Tooltip
+// Tooltip（改用相对定位）
 // ============================================
-
 const tooltip = ref({
   visible: false,
   x: 0,
@@ -242,14 +249,20 @@ const tooltip = ref({
 });
 
 const tooltipStyle = computed(() => ({
+  position: 'absolute',
   left: `${tooltip.value.x}px`,
   top: `${tooltip.value.y}px`,
+  'pointer-events': 'none',
+  'z-index': '1000',
 }));
+
+function getScoreColor(score: number) {
+  return scoreColorScale(score);
+}
 
 // ============================================
 // 模式显示
 // ============================================
-
 function getModeText() {
   if (store.selectedStudents.size === 0) return '全体平均';
   if (store.selectedStudents.size === 1) return '个体';
@@ -263,9 +276,8 @@ function getModeColor() {
 }
 
 // ============================================
-// 渲染
+// 渲染（优化：只渲染当前页）
 // ============================================
-
 onMounted(() => {
   nextTick(() => renderWeekView());
 });
@@ -273,6 +285,11 @@ onMounted(() => {
 watch(() => [currentPage.value, pagedStudentData.value.length], () => {
   nextTick(() => renderWeekView());
 }, { deep: true });
+
+// 监听选中变化，重置到第一页
+watch(() => store.selectedStudents.size, () => {
+  currentPage.value = 1;
+});
 
 function renderWeekView() {
   if (!svgRef.value || pagedStudentData.value.length === 0) return;
@@ -283,12 +300,11 @@ function renderWeekView() {
   const data = pagedStudentData.value;
   const knowledgeOrder = weekData.knowledgeOrder.value;
 
-  // 绘制每个学生的行
   data.forEach((row, rowIdx) => {
     const y = rowIdx * rowHeight + rowHeight / 2 + 40;
 
-    // 1. 学生头像
-    drawStudentAvatar(svg, row.studentId, 20, y);
+    // 1. 学生图标（改用 mdi 图标）
+    drawStudentIcon(svg, row.studentId, 20, y); // x=20，给文字留够空间
 
     // 2. 进度线
     const progressData = calculateRowProgress(row.snapshots);
@@ -300,7 +316,7 @@ function renderWeekView() {
       drawWeekRing(svg, snapshot, knowledgeOrder, x, y, row.studentId);
     });
 
-    // 4. 周标签（只在第一行）
+    // 4. 周标签
     if (rowIdx === 0) {
       for (let week = 1; week <= row.maxWeek; week++) {
         const x = leftMargin + week * weekWidth;
@@ -311,45 +327,37 @@ function renderWeekView() {
 }
 
 // ============================================
-// 绘图函数
+// 绘图函数（优化配色）
 // ============================================
-
-function drawStudentAvatar(svg: any, studentId: string, x: number, y: number) {
+function drawStudentIcon(svg: any, studentId: string, x: number, y: number) {
   const g = svg.append('g').attr('transform', `translate(${x}, ${y})`);
 
-  // 渐变背景圆
-  const gradient = svg.append('defs')
-    .append('linearGradient')
-    .attr('id', `avatar-grad-${studentId}`)
-    .attr('x1', '0%').attr('y1', '0%')
-    .attr('x2', '100%').attr('y2', '100%');
-  
-  gradient.append('stop').attr('offset', '0%').attr('stop-color', '#667eea');
-  gradient.append('stop').attr('offset', '100%').attr('stop-color', '#764ba2');
-
+  // 简洁的圆形背景
   g.append('circle')
-    .attr('r', 20)
-    .attr('fill', `url(#avatar-grad-${studentId})`)
+    .attr('r', 18)
+    .attr('fill', '#1976D2')
     .attr('stroke', '#fff')
     .attr('stroke-width', 2);
 
-  // 首字母
+  // mdi 图标
   g.append('text')
     .attr('text-anchor', 'middle')
     .attr('dominant-baseline', 'central')
-    .attr('font-size', '14px')
-    .attr('font-weight', 'bold')
+    .attr('font-size', '20px')
     .attr('fill', '#fff')
-    .text(studentId.slice(-2).toUpperCase());
+    .attr('font-family', 'Material Design Icons')
+    .text('\uF004'); // mdi-account
 
-  // ID 文字
+  // ID 文字 - 调整位置避免冲突
+  const label = studentId === '全体平均' ? '全部' : studentId.slice(-6);
   g.append('text')
-    .attr('x', 30)
+    .attr('x', 26)
     .attr('text-anchor', 'start')
     .attr('dominant-baseline', 'central')
-    .attr('font-size', '12px')
-    .attr('fill', '#666')
-    .text(studentId.slice(-6));
+    .attr('font-size', '10px')
+    .attr('fill', '#444')
+    .attr('font-weight', '500')
+    .text(label);
 }
 
 function drawWeekLabel(svg: any, week: number, x: number, y: number) {
@@ -357,7 +365,7 @@ function drawWeekLabel(svg: any, week: number, x: number, y: number) {
     .attr('x', x)
     .attr('y', y)
     .attr('text-anchor', 'middle')
-    .attr('font-size', '11px')
+    .attr('font-size', '10px')
     .attr('font-weight', '500')
     .attr('fill', '#888')
     .text(`W${week}`);
@@ -371,7 +379,6 @@ function drawWeekRing(
   cy: number,
   studentId: string
 ) {
-  // 外圈扇形
   const data = knowledgeOrder.map((k, i) => ({
     knowledge: k,
     score: snapshot.knowledgeScores.get(k) || 0,
@@ -388,44 +395,47 @@ function drawWeekRing(
 
   const g = svg.append('g').attr('transform', `translate(${cx}, ${cy})`);
 
+  // 外圈扇形（使用 Blues 色系）
   g.selectAll('path')
     .data(pie(data))
     .join('path')
     .attr('d', arc)
     .attr('fill', (d: any) => {
-      const opacity = d.data.score * 0.7 + 0.3;
-      return d3.color(d.data.color)!.copy({ opacity });
+      // 根据分数调整透明度
+      const baseColor = d3.color(d.data.color);
+      if (!baseColor) return d.data.color;
+      baseColor.opacity = d.data.score * 0.7 + 0.3;
+      return baseColor.toString();
     })
     .attr('stroke', '#fff')
     .attr('stroke-width', 1.5);
 
-  // 中心圆
+  // 中心圆（分数色阶）
   g.append('circle')
     .attr('r', innerRadius - 2)
     .attr('fill', scoreColorScale(snapshot.avgScore))
     .attr('stroke', '#fff')
     .attr('stroke-width', 2);
 
-  // 交互层
+  // 交互层（使用容器相对坐标）
   g.append('circle')
     .attr('r', ringRadius)
     .attr('fill', 'transparent')
     .style('cursor', 'pointer')
     .on('mouseenter', (event: any) => {
+      const containerRect = containerRef.value!.getBoundingClientRect();
+      const svgRect = svgRef.value!.getBoundingClientRect();
+      
       tooltip.value = {
         visible: true,
-        x: event.pageX + 10,
-        y: event.pageY + 10,
+        x: cx + (svgRect.left - containerRect.left) + 10,
+        y: cy + (svgRect.top - containerRect.top) - 80,
         studentId,
         week: snapshot.week,
         knowledge: Array.from(snapshot.knowledgeScores.entries()),
         avgScore: snapshot.avgScore,
         submits: snapshot.totalSubmits,
       };
-    })
-    .on('mousemove', (event: any) => {
-      tooltip.value.x = event.pageX + 10;
-      tooltip.value.y = event.pageY + 10;
     })
     .on('mouseleave', () => {
       tooltip.value.visible = false;
@@ -458,14 +468,14 @@ function drawProgressFlows(svg: any, progressData: any[], y: number) {
   progressData.forEach(d => {
     const x1 = leftMargin + d.fromWeek * weekWidth + ringRadius;
     const x2 = leftMargin + d.toWeek * weekWidth - ringRadius;
-    const color = d.improvement >= 0 ? '#52c41a' : '#f5222d';
+    const color = d.improvement >= 0 ? '#4CAF50' : '#F44336';
     
     svg.append('line')
       .attr('x1', x1).attr('y1', y)
       .attr('x2', x2).attr('y2', y)
       .attr('stroke', color)
-      .attr('stroke-width', Math.max(2, Math.abs(d.improvement) * 25))
-      .attr('opacity', 0.5);
+      .attr('stroke-width', Math.max(1, Math.abs(d.improvement) * 20))
+      .attr('opacity', 0.4);
   });
 }
 </script>
@@ -485,40 +495,7 @@ function drawProgressFlows(svg: any, progressData: any[], y: number) {
 }
 
 .week-tooltip {
-  position: fixed;
-  background: rgba(30, 30, 30, 0.95);
-  color: white;
-  padding: 10px 14px;
-  border-radius: 6px;
-  pointer-events: none;
-  z-index: 9999;
+  max-width: 240px;
   font-size: 12px;
-  max-width: 280px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.tooltip-header {
-  display: flex;
-  align-items: center;
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-
-.tooltip-content {
-  max-height: 140px;
-  overflow-y: auto;
-}
-
-.tooltip-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 3px 0;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.tooltip-row strong {
-  color: #4CAF50;
 }
 </style>
