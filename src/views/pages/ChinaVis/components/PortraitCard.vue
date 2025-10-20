@@ -20,9 +20,9 @@
     </v-card-text>
 
     <!-- 画像画布 -->
-    <v-card-text v-else class="pa-2" style="height: calc(100% - 60px);">
+    <v-card-text v-else class="pa-2 portrait-canvas">
       <div ref="containerRef" class="portrait-container">
-        <svg ref="svgRef" width="100%" height="100%" />
+        <svg ref="svgRef" width="100%" height="100%" > </svg>
         
         <!-- Tooltip -->
         <div
@@ -55,8 +55,8 @@ const store = useVisStore();
 const svgRef = ref<SVGSVGElement | null>(null);
 const containerRef = ref<HTMLDivElement | null>(null);
 
-const width = ref(800);
-const height = ref(400);
+const width = ref(600);
+const height = ref(480);
 
 // ============================================
 // Tooltip
@@ -354,5 +354,18 @@ function drawRadarChart(
 
 .tooltip-value {
   font-size: 11px;
+}
+.portrait-canvas {
+  height: calc(100% - 60px);
+  overflow: hidden;
+}
+
+.portrait-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

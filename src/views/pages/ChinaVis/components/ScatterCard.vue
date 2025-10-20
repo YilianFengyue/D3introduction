@@ -70,7 +70,7 @@
 </v-card-text>
 
 <!-- 散点图画布 -->            <!-- ❌ 去掉这类注释（或移到内部） -->
-<v-card-text v-else class="pa-2" style="height: calc(100% - 120px); overflow: hidden;">
+<v-card-text v-else class="pa-2 scatter-canvas">
   <div ref="containerRef" class="scatter-container">
     <!-- ✅ ② 配合下面把 svg 改成成对闭合 -->
     <svg ref="svgRef" width="100%" height="100%"></svg>
@@ -158,8 +158,8 @@ const svgRef = ref<SVGSVGElement | null>(null);
 const containerRef = ref<HTMLDivElement | null>(null);
 const tooltipRef = ref<HTMLDivElement | null>(null);
 
-const width = ref(600);
-const height = ref(350);
+const width = ref(700);
+const height = ref(480);
 
 
 // ============================================
@@ -533,5 +533,16 @@ function reloadData() {
   justify-content: space-between;
   gap: 8px;
   margin: 2px 0;
+}
+
+.scatter-canvas {
+  height: calc(100% - 110px);
+  overflow: hidden;
+}
+
+.scatter-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
 }
 </style>
